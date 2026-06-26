@@ -29,7 +29,6 @@
   .post-body { padding: 14px; }
   .post-text { font-size: 14px; line-height: 1.6; color: #ddd; white-space: pre-wrap; word-break: break-word; }
   .post-text a { color: #6c9eff; text-decoration: none; }
-  .post-text a:hover { text-decoration: underline; }
   .post-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid #242424; }
   .post-date { font-size: 11px; color: #555; }
   .post-views { font-size: 11px; color: #555; display: flex; align-items: center; gap: 4px; }
@@ -46,10 +45,12 @@
   .load-more-btn:hover { background: #2a2a2a; color: #fff; }
 
   .empty { text-align: center; padding: 60px 20px; color: #555; }
-  .empty svg { margin-bottom: 12px; opacity: 0.4; }
-  .empty p { font-size: 14px; line-height: 1.6; }
+  .empty p { font-size: 14px; line-height: 1.8; }
 
   .error-banner { background: #2a1a1a; border: 1px solid #5a2a2a; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; color: #ff8080; line-height: 1.5; }
+
+  .progress-bar { height: 2px; background: #222; border-radius: 2px; margin-bottom: 12px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #6c63ff, #3ecfcf); border-radius: 2px; transition: width 0.3s; }
 
   .preloading-badge { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; color: #555; padding: 8px; }
   .preloading-dot { width: 5px; height: 5px; border-radius: 50%; background: #6c63ff; animation: pulse 1s infinite; }
@@ -79,44 +80,95 @@
 
 <script>
 const TOKEN = '8662130516:AAFJnnKvralhkb-Q0TJDeXBDcP9ZLBJZnWM';
-const CHANNEL_ID = '-1003378226565';
+const CHANNEL = '@BotJustBest';
+const MAX_MSG_ID = 69;
 const PAGE_SIZE = 5;
 const PRELOAD_SIZE = 5;
 const BASE = `https://api.telegram.org/bot${TOKEN}`;
 
-const USER_ID = (typeof Telegram !== 'undefined' && Telegram.WebApp?.initDataUnsafe?.user?.id) || 'DEMO_' + Math.random().toString(36).slice(2,7);
-const WM_INVISIBLE = '\u200b\u200c\u200b\u200c\u200b\u200d\u200c\u200b';
+const USER_ID = (typeof Telegram !== 'undefined' && Telegram.WebApp?.initDataUnsafe?.user?.id) || 'DEMO';
+const WM = '\u200b\u200c\u200b\u200d\u200c\u200b';
 
 let allPosts = [];
 let shown = 0;
 let preloaded = [];
 let isLoading = false;
-let maxMessageId = 0;
 
-async function fetchPosts() {
-  // Получаем последние посты через getUpdates с offset
-  const resp = await fetch(`${BASE}/getUpdates?limit=100&allowed_updates=["channel_post","message"]`);
-  const data = await resp.json();
-  if (!data.ok) throw new Error(data.description || 'Ошибка API');
+// Получаем посты перебором message_id через forwardMessages
+async function fetchAllPosts() {
+  const posts = [];
+  const BATCH = 10;
 
-  let posts = data.result
-    .filter(u => u.channel_post)
-    .map(u => u.channel_post)
-    .filter(p => String(p.chat.id) === CHANNEL_ID || String(p.chat.id) === CHANNEL_ID.replace('-100',''));
+  // Сначала пробуем forwardMessages батчами
+  for (let start = 1; start <= MAX_MSG_ID; start += BATCH) {
+    const ids = [];
+    for (let i = start; i < start + BATCH && i <= MAX_MSG_ID; i++) ids.push(i);
 
-  // Если нет фильтра по каналу — берём все channel_post
-  if (!posts.length) {
-    posts = data.result
-      .filter(u => u.channel_post)
-      .map(u => u.channel_post);
+    try {
+      const r = await fetch(`${BASE}/forwardMessages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TOKEN.split(':')[0], // пересылаем боту самому себе (его user_id)
+          from_chat_id: CHANNEL,
+          message_ids: ids,
+          disable_notification: true
+        })
+      });
+      const d = await r.json();
+      if (d.ok && d.result) {
+        for (const msg of d.result) {
+          if (msg && (msg.text || msg.photo || msg.video || msg.caption)) {
+            posts.push({ ...msg, original_id: msg.forward_origin?.message_id });
+          }
+        }
+      }
+    } catch(e) {}
+
+    // Небольшая пауза чтобы не превысить лимиты
+    await new Promise(r => setTimeout(r, 300));
   }
 
-  // Сортируем новые сначала
-  posts.sort((a, b) => b.date - a.date);
-  return posts;
+  // Если forwardMessages не сработал — пробуем copyMessage по одному
+  if (!posts.length) {
+    for (let id = MAX_MSG_ID; id >= 1; id--) {
+      try {
+        const r = await fetch(`${BASE}/copyMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: TOKEN.split(':')[0],
+            from_chat_id: CHANNEL,
+            message_id: id,
+            disable_notification: true
+          })
+        });
+        const d = await r.json();
+        if (d.ok) posts.push({ message_id: d.result.message_id, _original_id: id });
+      } catch(e) {}
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  return posts.sort((a, b) => b.message_id - a.message_id);
+}
+
+// Альтернатива: читаем пересланные сообщения из чата бота с собой
+async function fetchViaGetUpdates() {
+  const r = await fetch(`${BASE}/getUpdates?limit=100&offset=-100`);
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.description);
+
+  const posts = d.result
+    .filter(u => (u.channel_post || u.message?.forward_origin))
+    .map(u => u.channel_post || u.message)
+    .filter(Boolean);
+
+  return posts.sort((a, b) => b.date - a.date);
 }
 
 function formatDate(ts) {
+  if (!ts) return '';
   const d = new Date(ts * 1000);
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -128,10 +180,9 @@ function escapeHtml(t) {
 
 function formatText(text, entities) {
   if (!text) return '';
-  if (!entities || !entities.length) return escapeHtml(text);
+  if (!entities?.length) return escapeHtml(text);
   const chars = [...text];
-  let result = '';
-  let i = 0;
+  let result = '', i = 0;
   const ents = [...entities].sort((a,b) => a.offset - b.offset);
   let ei = 0;
   while (i < chars.length) {
@@ -142,12 +193,9 @@ function formatText(text, entities) {
       else if (e.type === 'url') result += `<a href="${escapeHtml(chunk)}" target="_blank">${escapeHtml(chunk)}</a>`;
       else if (e.type === 'bold') result += `<b>${escapeHtml(chunk)}</b>`;
       else if (e.type === 'italic') result += `<i>${escapeHtml(chunk)}</i>`;
-      else if (e.type === 'code') result += `<code>${escapeHtml(chunk)}</code>`;
       else result += escapeHtml(chunk);
       i += e.length; ei++;
-    } else {
-      result += escapeHtml(chars[i]); i++;
-    }
+    } else { result += escapeHtml(chars[i]); i++; }
   }
   return result;
 }
@@ -161,16 +209,11 @@ async function getFileUrl(file_id) {
   return null;
 }
 
-function addWatermark(text) {
-  // Невидимые символы нулевой ширины кодируют USER_ID
-  return text + WM_INVISIBLE + USER_ID;
-}
-
 async function renderPost(post) {
   const div = document.createElement('div');
   div.className = 'post';
-
   let mediaHtml = '';
+
   if (post.photo) {
     const photo = post.photo[post.photo.length - 1];
     const url = await getFileUrl(photo.file_id);
@@ -178,19 +221,12 @@ async function renderPost(post) {
   } else if (post.video) {
     const url = await getFileUrl(post.video.file_id);
     if (url) mediaHtml = `<video class="post-media" src="${url}" controls preload="none"></video>`;
-  } else if (post.document && post.document.mime_type?.startsWith('image/')) {
-    const url = await getFileUrl(post.document.file_id);
-    if (url) mediaHtml = `<img class="post-media" src="${url}" loading="lazy" alt="фото">`;
   }
 
-  const rawText = post.text || post.caption || '';
+  const text = post.text || post.caption || '';
   const entities = post.entities || post.caption_entities;
-  const textWithWm = addWatermark(rawText);
-  const textHtml = formatText(textWithWm, entities);
-
-  const views = post.views
-    ? `<span class="post-views"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>${post.views.toLocaleString('ru-RU')}</span>`
-    : '';
+  const textHtml = formatText(text, entities);
+  const views = post.views ? `<span class="post-views"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>${post.views.toLocaleString('ru-RU')}</span>` : '';
 
   div.innerHTML = `
     ${mediaHtml}
@@ -200,7 +236,7 @@ async function renderPost(post) {
         <span class="post-date">${formatDate(post.date)}</span>
         ${views}
       </div>
-      <div class="watermark">${USER_ID}</div>
+      <div class="watermark">${WM}${USER_ID}</div>
     </div>
   `;
   return div;
@@ -211,54 +247,43 @@ function renderSkeletons(n = 3) {
   for (let i = 0; i < n; i++) {
     const s = document.createElement('div');
     s.className = 'skeleton';
-    s.innerHTML = `<div class="skeleton-img"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:80%"></div><div class="skeleton-line" style="width:60%"></div><div class="skeleton-line" style="width:35%"></div></div>`;
+    s.innerHTML = `<div class="skeleton-img"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:80%"></div><div class="skeleton-line" style="width:55%"></div><div class="skeleton-line" style="width:35%"></div></div>`;
     feed.appendChild(s);
   }
 }
 
-function clearSkeletons() {
-  document.querySelectorAll('.skeleton').forEach(s => s.remove());
-}
+function clearSkeletons() { document.querySelectorAll('.skeleton').forEach(s => s.remove()); }
 
 async function preloadBatch(posts) {
   const batch = [];
-  for (const post of posts) {
-    batch.push(await renderPost(post));
-  }
+  for (const post of posts) batch.push(await renderPost(post));
   return batch;
 }
 
 async function showNextBatch() {
   if (isLoading) return;
   isLoading = true;
-
   const feed = document.getElementById('feed');
-  const existing = feed.querySelector('.load-more');
-  if (existing) existing.remove();
+  feed.querySelector('.load-more')?.remove();
 
   const badge = document.createElement('div');
   badge.className = 'preloading-badge';
-  badge.innerHTML = `<div class="preloading-dot"></div>Подготовка постов...`;
+  badge.innerHTML = `<div class="preloading-dot"></div>Подготовка постов с водяными знаками...`;
   feed.appendChild(badge);
 
   let toShow = [];
   if (preloaded.length > 0) {
     toShow = preloaded.splice(0, PAGE_SIZE);
   } else {
-    const batch = allPosts.slice(shown, shown + PAGE_SIZE);
-    toShow = await preloadBatch(batch);
+    toShow = await preloadBatch(allPosts.slice(shown, shown + PAGE_SIZE));
   }
-
   badge.remove();
 
   for (const el of toShow) feed.appendChild(el);
   shown += toShow.length;
 
-  // Предзагружаем следующую пачку в фоне
   const nextBatch = allPosts.slice(shown, shown + PRELOAD_SIZE);
-  if (nextBatch.length > 0) {
-    preloadBatch(nextBatch).then(els => { preloaded = els; });
-  }
+  if (nextBatch.length > 0) preloadBatch(nextBatch).then(els => { preloaded = els; });
 
   if (shown < allPosts.length) {
     const loadMore = document.createElement('div');
@@ -273,29 +298,30 @@ async function showNextBatch() {
 async function init() {
   const feed = document.getElementById('feed');
   const countEl = document.getElementById('post-count');
-
   feed.innerHTML = '';
   renderSkeletons(3);
 
   try {
-    allPosts = await fetchPosts();
+    // Сначала пробуем getUpdates (новые посты)
+    let posts = await fetchViaGetUpdates();
+
+    // Если мало постов — пробуем forwardMessages для истории
+    if (posts.length < 3) {
+      countEl.textContent = 'Загружаю историю...';
+      posts = await fetchAllPosts();
+    }
+
     clearSkeletons();
 
-    if (!allPosts.length) {
+    if (!posts.length) {
       countEl.textContent = 'Нет постов';
-      feed.innerHTML = `
-        <div class="empty">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <p>Постов пока нет.<br>Бот <b>@ArkadiyAiBot_bot</b> должен быть<br>администратором канала,<br>а посты должны быть опубликованы<br>после добавления бота.</p>
-        </div>`;
+      feed.innerHTML = `<div class="empty"><p>Постов пока нет.<br>Опубликуй новый пост в канале<br>и нажми Обновить.</p></div>`;
       return;
     }
 
+    allPosts = posts;
     countEl.textContent = `${allPosts.length} публикаций`;
-    shown = 0;
-    preloaded = [];
+    shown = 0; preloaded = [];
     await showNextBatch();
 
   } catch(e) {
@@ -307,11 +333,9 @@ async function init() {
 
 async function refreshFeed() {
   const btn = document.getElementById('refresh-btn');
-  btn.classList.add('spinning');
-  btn.disabled = true;
+  btn.classList.add('spinning'); btn.disabled = true;
   await init();
-  btn.classList.remove('spinning');
-  btn.disabled = false;
+  btn.classList.remove('spinning'); btn.disabled = false;
 }
 
 if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
