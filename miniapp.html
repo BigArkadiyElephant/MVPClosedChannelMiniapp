@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Закрытый клуб</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0f0f;
+    color: #e8e8e8;
+    min-height: 100vh;
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #0f0f0f;
+    border-bottom: 1px solid #222;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6c63ff, #3ecfcf);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .header-sub {
+    font-size: 11px;
+    color: #666;
+    margin-top: 1px;
+  }
+
+  .refresh-btn {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    color: #aaa;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s;
+  }
+
+  .refresh-btn:hover { background: #2a2a2a; color: #fff; border-color: #555; }
+  .refresh-btn:active { transform: scale(0.96); }
+  .refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .feed {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 12px 12px 32px;
+  }
+
+  .post {
+    background: #1a1a1a;
+    border: 1px solid #242424;
+    border-radius: 14px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .post-media {
+    width: 100%;
+    max-height: 360px;
+    object-fit: cover;
+    display: block;
+    background: #222;
+  }
+
+  .post-body { padding: 14px; }
+
+  .post-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #ddd;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .post-text a { color: #6c9eff; text-decoration: none; }
+  .post-text a:hover { text-decoration: underline; }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #242424;
+  }
+
+  .post-date { font-size: 11px; color: #555; }
+
+  .post-views {
+    font-size: 11px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .watermark {
+    font-size: 10px;
+    color: #333;
+    margin-top: 8px;
+    font-family: monospace;
+    letter-spacing: 0.05em;
+    user-select: none;
+  }
+
+  .skeleton {
+    background: #1a1a1a;
+    border: 1px solid #242424;
+    border-radius: 14px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .skeleton-img {
+    width: 100%;
+    height: 200px;
+    background: #222;
+    animation: shimmer 1.4s infinite;
+  }
+
+  .skeleton-lines { padding: 14px; }
+
+  .skeleton-line {
+    height: 12px;
+    border-radius: 6px;
+    background: #222;
+    margin-bottom: 8px;
+    animation: shimmer 1.4s infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 1;   }
+    100% { opacity: 0.5; }
+  }
+
+  .load-more {
+    text-align: center;
+    padding: 20px;
+  }
+
+  .load-more-btn {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    color: #aaa;
+    border-radius: 10px;
+    padding: 10px 24px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .load-more-btn:hover { background: #2a2a2a; color: #fff; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #555;
+  }
+
+  .empty svg { margin-bottom: 12px; opacity: 0.4; }
+  .empty p { font-size: 14px; }
+
+  .error-banner {
+    background: #2a1a1a;
+    border: 1px solid #5a2a2a;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #ff8080;
+  }
+
+  .preloading-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #555;
+    padding: 4px 10px;
+    background: #1a1a1a;
+    border-radius: 20px;
+    margin: 0 auto 12px;
+  }
+
+  .preloading-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #6c63ff;
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-avatar">К</div>
+    <div>
+      <div class="header-title">Закрытый клуб</div>
+      <div class="header-sub" id="post-count">Загрузка...</div>
+    </div>
+  </div>
+  <button class="refresh-btn" id="refresh-btn" onclick="refreshFeed()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+    </svg>
+    Обновить
+  </button>
+</div>
+
+<div class="feed" id="feed"></div>
+
+<script>
+const TOKEN = '8662130516:AAFJnnKvralhkb-Q0TJDeXBDcP9ZLBJZnWM';
+const CHANNEL = '@BotJustBest';
+const PAGE_SIZE = 5;
+const PRELOAD_SIZE = 5;
+const BASE = `https://api.telegram.org/bot${TOKEN}`;
+
+// Watermark — в реальном проекте берётся из Telegram.WebApp.initDataUnsafe
+const USER_ID = (typeof Telegram !== 'undefined' && Telegram.WebApp?.initDataUnsafe?.user?.id) || 'DEMO';
+const WM = `\u200b\u200c\u200b\u200c\u200b` + USER_ID; // невидимые символы + ID
+
+let allPosts = [];
+let shown = 0;
+let preloaded = [];
+let isLoading = false;
+
+async function fetchPosts() {
+  const resp = await fetch(`${BASE}/getUpdates?limit=100&allowed_updates=["channel_post"]`);
+  const data = await resp.json();
+
+  if (!data.ok) {
+    // Попробуем через getChat + getChatHistory fallback
+    const ch = await fetch(`${BASE}/getChat?chat_id=${CHANNEL}`);
+    const chData = await ch.json();
+    if (!chData.ok) throw new Error(chData.description || 'Ошибка API');
+    return [];
+  }
+
+  const posts = data.result
+    .filter(u => u.channel_post)
+    .map(u => u.channel_post)
+    .reverse();
+
+  return posts;
+}
+
+async function fetchChannelHistory() {
+  // Используем getChatHistory через bot forward trick
+  // Реальный способ — forwardMessages или сохранённые message_ids
+  // Для MVP используем getUpdates и фильтруем channel_post
+  const resp = await fetch(`${BASE}/getUpdates?limit=100`);
+  const data = await resp.json();
+
+  if (!data.ok) throw new Error(data.description || 'Ошибка Telegram API');
+
+  let posts = data.result
+    .filter(u => u.channel_post && (!u.channel_post.chat?.username || u.channel_post.chat.username.toLowerCase() === 'botjustbest'))
+    .map(u => u.channel_post);
+
+  // Если пусто — попробуем без фильтра по каналу
+  if (!posts.length) {
+    posts = data.result
+      .filter(u => u.channel_post)
+      .map(u => u.channel_post);
+  }
+
+  return posts.reverse();
+}
+
+function formatDate(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatText(text, entities) {
+  if (!text) return '';
+  if (!entities) return escapeHtml(text);
+  let result = '';
+  let i = 0;
+  const chars = [...text];
+  const ents = [...entities].sort((a,b) => a.offset - b.offset);
+  let ei = 0;
+  while (i < chars.length) {
+    if (ei < ents.length && i === ents[ei].offset) {
+      const e = ents[ei];
+      const chunk = chars.slice(e.offset, e.offset + e.length).join('');
+      if (e.type === 'text_link') result += `<a href="${e.url}" target="_blank">${escapeHtml(chunk)}</a>`;
+      else if (e.type === 'url') result += `<a href="${escapeHtml(chunk)}" target="_blank">${escapeHtml(chunk)}</a>`;
+      else if (e.type === 'bold') result += `<b>${escapeHtml(chunk)}</b>`;
+      else if (e.type === 'italic') result += `<i>${escapeHtml(chunk)}</i>`;
+      else if (e.type === 'code') result += `<code>${escapeHtml(chunk)}</code>`;
+      else result += escapeHtml(chunk);
+      i += e.length;
+      ei++;
+    } else {
+      result += escapeHtml(chars[i]);
+      i++;
+    }
+  }
+  return result;
+}
+
+async function getFileUrl(file_id) {
+  try {
+    const r = await fetch(`${BASE}/getFile?file_id=${file_id}`);
+    const d = await r.json();
+    if (d.ok) return `https://api.telegram.org/file/bot${TOKEN}/${d.result.file_path}`;
+  } catch(e) {}
+  return null;
+}
+
+async function renderPost(post) {
+  const div = document.createElement('div');
+  div.className = 'post';
+
+  let mediaHtml = '';
+
+  if (post.photo) {
+    const photo = post.photo[post.photo.length - 1];
+    const url = await getFileUrl(photo.file_id);
+    if (url) mediaHtml = `<img class="post-media" src="${url}" loading="lazy" alt="фото">`;
+  } else if (post.video) {
+    const url = await getFileUrl(post.video.file_id);
+    if (url) mediaHtml = `<video class="post-media" src="${url}" controls preload="none"></video>`;
+  } else if (post.document && post.document.mime_type?.startsWith('image/')) {
+    const url = await getFileUrl(post.document.file_id);
+    if (url) mediaHtml = `<img class="post-media" src="${url}" loading="lazy" alt="фото">`;
+  }
+
+  const text = post.text || post.caption || '';
+  const entities = post.entities || post.caption_entities;
+  const textHtml = formatText(text, entities);
+  const views = post.views ? `<span class="post-views"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>${post.views.toLocaleString('ru-RU')}</span>` : '';
+
+  div.innerHTML = `
+    ${mediaHtml}
+    <div class="post-body">
+      ${textHtml ? `<div class="post-text">${textHtml}</div>` : ''}
+      <div class="post-meta">
+        <span class="post-date">${formatDate(post.date)}</span>
+        ${views}
+      </div>
+      <div class="watermark">${WM}</div>
+    </div>
+  `;
+  return div;
+}
+
+function renderSkeleton(n = 3) {
+  const feed = document.getElementById('feed');
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('div');
+    s.className = 'skeleton';
+    s.innerHTML = `<div class="skeleton-img"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:80%"></div><div class="skeleton-line" style="width:60%"></div><div class="skeleton-line" style="width:40%"></div></div>`;
+    feed.appendChild(s);
+  }
+}
+
+function clearSkeletons() {
+  document.querySelectorAll('.skeleton').forEach(s => s.remove());
+}
+
+async function preloadBatch(posts) {
+  // Предзагружаем следующие M постов заранее
+  const batch = [];
+  for (const post of posts) {
+    batch.push(await renderPost(post));
+  }
+  return batch;
+}
+
+async function showNextBatch() {
+  if (isLoading) return;
+  isLoading = true;
+
+  const feed = document.getElementById('feed');
+
+  // Убираем кнопку "ещё"
+  const existing = feed.querySelector('.load-more');
+  if (existing) existing.remove();
+
+  // Показываем индикатор предзагрузки
+  const badge = document.createElement('div');
+  badge.className = 'load-more';
+  badge.innerHTML = `<div class="preloading-badge"><div class="preloading-dot"></div>Загрузка постов...</div>`;
+  feed.appendChild(badge);
+
+  // Если есть предзагруженные — показываем сразу
+  let toShow = [];
+  if (preloaded.length > 0) {
+    toShow = preloaded.splice(0, PAGE_SIZE);
+    badge.remove();
+  } else {
+    // Рендерим текущую пачку
+    const batch = allPosts.slice(shown, shown + PAGE_SIZE);
+    toShow = await preloadBatch(batch);
+    badge.remove();
+  }
+
+  for (const el of toShow) {
+    feed.appendChild(el);
+  }
+  shown += toShow.length;
+
+  // Предзагружаем следующую пачку в фоне
+  const nextBatch = allPosts.slice(shown, shown + PRELOAD_SIZE);
+  if (nextBatch.length > 0) {
+    preloadBatch(nextBatch).then(els => { preloaded = els; });
+  }
+
+  // Кнопка "ещё" если есть что показывать
+  if (shown < allPosts.length) {
+    const loadMore = document.createElement('div');
+    loadMore.className = 'load-more';
+    loadMore.innerHTML = `<button class="load-more-btn" onclick="showNextBatch()">Показать ещё (${allPosts.length - shown})</button>`;
+    feed.appendChild(loadMore);
+  }
+
+  isLoading = false;
+}
+
+async function init() {
+  const feed = document.getElementById('feed');
+  const countEl = document.getElementById('post-count');
+
+  feed.innerHTML = '';
+  renderSkeleton(3);
+
+  try {
+    allPosts = await fetchChannelHistory();
+    clearSkeletons();
+
+    if (!allPosts.length) {
+      countEl.textContent = 'Нет постов';
+      feed.innerHTML = `<div class="empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><p>Постов пока нет.<br>Бот должен быть администратором канала.</p></div>`;
+      return;
+    }
+
+    countEl.textContent = `${allPosts.length} публикаций`;
+    shown = 0;
+    preloaded = [];
+    await showNextBatch();
+
+  } catch(e) {
+    clearSkeletons();
+    countEl.textContent = 'Ошибка';
+    feed.innerHTML = `<div class="error-banner">Ошибка загрузки: ${e.message}<br><small>Убедись что бот добавлен в канал как администратор</small></div>`;
+  }
+}
+
+async function refreshFeed() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  await init();
+  btn.classList.remove('spinning');
+  btn.disabled = false;
+}
+
+// Инициализация Telegram WebApp если доступно
+if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+  Telegram.WebApp.ready();
+  Telegram.WebApp.expand();
+}
+
+init();
+</script>
+</body>
+</html>
